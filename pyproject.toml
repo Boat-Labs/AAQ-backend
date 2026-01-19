@@ -1,0 +1,24 @@
+[project]
+name = "AAQ-backend"
+version = "0.1.0"
+description = "AI-Augmented Quantitative Investment Backend"
+requires-python = ">=3.10"
+readme = "README.md"
+dependencies = [
+  "fastapi>=0.110.0",
+  "pydantic>=2.6.0",
+  "pydantic-settings>=2.2.1",
+  "uvicorn[standard]>=0.27.1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "httpx>=0.25.0",
+  "pre-commit>=3.7.0",
+  "pytest>=8.0.0",
+  "ruff>=0.4.0",
+]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-q"
