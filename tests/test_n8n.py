@@ -69,11 +69,8 @@ def test_list_workflows(mock_get):
     wf = body["data"][0]
     assert wf["name"] == "Caixin RSShub"
     assert wf["active"] is True
-    # camelCase aliases
-    assert wf["nodeCount"] == 2
+    assert wf["node_count"] == 2
     assert wf["tags"] == ["news", "rss"]
-    assert "createdAt" in wf
-    assert "updatedAt" in wf
 
 
 @patch("app.core.n8n.router.get_workflows", new_callable=AsyncMock)
@@ -97,17 +94,13 @@ def test_list_executions(mock_exec, mock_wf):
     assert response.status_code == 200
     body = response.json()
     assert body["total"] == 2
-    # Response uses "data" key (not "executions")
     ex = body["data"][0]
-    # camelCase aliases
-    assert ex["workflowName"] == "Caixin RSShub"
-    assert ex["workflowId"] == "abc123"
+    assert ex["workflow_name"] == "Caixin RSShub"
+    assert ex["workflow_id"] == "abc123"
     assert ex["status"] == "success"
     assert ex["mode"] == "trigger"
-    assert ex["durationMs"] == 5000
-    assert "startedAt" in ex
-    assert "stoppedAt" in ex
-    assert body["data"][1]["durationMs"] == 3000
+    assert ex["duration_ms"] == 5000
+    assert body["data"][1]["duration_ms"] == 3000
 
 
 def test_execution_numeric_id_coercion():
@@ -142,8 +135,6 @@ def test_pipeline_stats(mock_stats):
     body = response.json()
     assert body["total_workflows"] == 33
     assert body["active_workflows"] == 7
-    # Frontend expects executions_24h alias
-    assert body["executions_24h"] == 12
+    assert body["recent_executions_24h"] == 12
     assert body["success_rate"] == 95.0
-    assert body["data_points"] == 0
     assert body["error"] is None

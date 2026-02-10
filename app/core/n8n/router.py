@@ -15,7 +15,7 @@ from app.core.n8n.service import get_executions, get_stats, get_workflows
 router = APIRouter()
 
 
-@router.get("/workflows", response_model=WorkflowListResponse, response_model_by_alias=True)
+@router.get("/workflows", response_model=WorkflowListResponse)
 async def list_workflows():
     workflows, error = await get_workflows()
     items = [
@@ -36,7 +36,7 @@ async def list_workflows():
     return WorkflowListResponse(data=items, total=len(items), error=error)
 
 
-@router.get("/executions", response_model=ExecutionListResponse, response_model_by_alias=True)
+@router.get("/executions", response_model=ExecutionListResponse)
 async def list_executions(
     limit: int = Query(default=20, ge=1, le=100),
     status: Optional[str] = Query(default=None),
@@ -70,16 +70,7 @@ async def list_executions(
     return ExecutionListResponse(data=items, total=len(items), error=error)
 
 
-@router.get("/stats", response_model=PipelineStatsResponse, response_model_by_alias=True)
+@router.get("/stats", response_model=PipelineStatsResponse)
 async def pipeline_stats():
     stats = await get_stats()
-    return PipelineStatsResponse(
-        total_workflows=stats["total_workflows"],
-        active_workflows=stats["active_workflows"],
-        total_executions=stats["total_executions"],
-        executions_24h=stats["recent_executions_24h"],
-        success_rate=stats["success_rate"],
-        node_type_counts=stats["node_type_counts"],
-        data_points=0,
-        error=stats["error"],
-    )
+    return PipelineStatsResponse(**stats)
