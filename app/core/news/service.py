@@ -69,6 +69,26 @@ def get_articles(
         conn.close()
 
 
+def get_articles_by_ids(ids: list[int]) -> list[NewsArticle]:
+    if not ids:
+        return []
+    conn = _get_connection()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            query = """
+                SELECT id, title, content, link, published_at, source, author,
+                       topic, subtopic, content_type, created_at
+                FROM public.news
+                WHERE id = ANY(%s)
+                ORDER BY published_at DESC NULLS LAST
+            """
+            cur.execute(query, [ids])
+            rows = cur.fetchall()
+            return [NewsArticle(**row) for row in rows]
+    finally:
+        conn.close()
+
+
 def get_summary() -> dict:
     conn = _get_connection()
     try:
