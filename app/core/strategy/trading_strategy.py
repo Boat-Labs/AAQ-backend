@@ -10,6 +10,8 @@ from typing import Callable, Protocol
 
 from dotenv import load_dotenv
 
+load_dotenv()
+
 from app.core.strategy.models import (
     FinalStateModel,
     MarketSignal,
