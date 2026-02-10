@@ -2,8 +2,6 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-from dotenv import load_dotenv
-
 from app.core.strategy.models import MarketSignal, StrategyBatchResult
 from app.core.strategy.trading_strategy import (
     TradingStrategy,
@@ -13,7 +11,6 @@ from app.core.strategy.trading_strategy import (
 
 
 def run_market_signal_strategy(signal: MarketSignal) -> StrategyBatchResult:
-    load_dotenv()
     strategy = TradingStrategy()
     return strategy.run_market_signal(signal)
 
