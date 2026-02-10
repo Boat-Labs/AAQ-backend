@@ -5,6 +5,26 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 DecisionLiteral = Literal["BUY", "SELL", "HOLD"]
 
 
+def _coerce_gemini_content(value: Any) -> str:
+    """Coerce Gemini thinking-mode content blocks to plain text.
+
+    Gemini 3 with thinking enabled returns list[dict] like:
+    [{"type": "text", "text": "...", "thought_signature": "..."}]
+    instead of a plain string.
+    """
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        parts = []
+        for item in value:
+            if isinstance(item, dict) and "text" in item:
+                parts.append(item["text"])
+            elif isinstance(item, str):
+                parts.append(item)
+        return "\n".join(parts)
+    return str(value)
+
+
 class SuggestedVendor(BaseModel):
     name: str
     reason: str
@@ -33,6 +53,13 @@ class InvestmentDebateStateModel(BaseModel):
     judge_decision: str = ""
     count: int = 0
 
+    @field_validator("*", mode="before")
+    @classmethod
+    def coerce_str_fields(cls, value: Any, info: Any) -> Any:
+        if info.field_name == "count":
+            return value
+        return _coerce_gemini_content(value)
+
 
 class RiskDebateStateModel(BaseModel):
     aggressive_history: str = ""
@@ -45,6 +72,13 @@ class RiskDebateStateModel(BaseModel):
     current_neutral_response: str = ""
     judge_decision: str = ""
     count: int = 0
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def coerce_str_fields(cls, value: Any, info: Any) -> Any:
+        if info.field_name == "count":
+            return value
+        return _coerce_gemini_content(value)
 
 
 class FinalStateModel(BaseModel):
@@ -71,6 +105,17 @@ class FinalStateModel(BaseModel):
         default_factory=RiskDebateStateModel
     )
     final_trade_decision: str = ""
+
+    _STR_FIELDS = {
+        "market_report", "sentiment_report", "news_report",
+        "fundamentals_report", "investment_plan",
+        "trader_investment_plan", "final_trade_decision",
+    }
+
+    @field_validator(*_STR_FIELDS, mode="before")
+    @classmethod
+    def coerce_str_fields(cls, value: Any) -> str:
+        return _coerce_gemini_content(value)
 
 
 class PropagateResultModel(BaseModel):
