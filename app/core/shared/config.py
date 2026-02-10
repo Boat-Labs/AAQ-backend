@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     database_password: str = ""
     database_name: str = "postgres"
 
+    n8n_base_url: str = "https://n8n.aishell.de"
+    n8n_api_key: str = ""
+
     model_config = {"env_file": ".env"}
 
 
