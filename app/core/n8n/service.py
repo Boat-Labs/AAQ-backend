@@ -21,12 +21,17 @@ def _base_url() -> str:
     return settings.n8n_base_url.rstrip("/")
 
 
-async def get_workflows() -> Tuple[List[N8nWorkflow], Optional[str]]:
-    """Fetch all workflows from n8n. Returns (workflows, error_message)."""
+async def get_workflows(
+    tags: Optional[str] = None,
+) -> Tuple[List[N8nWorkflow], Optional[str]]:
+    """Fetch workflows from n8n. Optionally filter by tag name. Returns (workflows, error_message)."""
     url = f"{_base_url()}/api/v1/workflows"
+    params: Dict[str, Any] = {}
+    if tags:
+        params["tags"] = tags
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            resp = await client.get(url, headers=_headers())
+            resp = await client.get(url, headers=_headers(), params=params)
             resp.raise_for_status()
             data = resp.json()
             raw_workflows = data.get("data", data) if isinstance(data, dict) else data
@@ -78,10 +83,17 @@ async def get_executions(
         return [], msg
 
 
-async def get_stats() -> Dict[str, Any]:
+async def get_stats(tags: Optional[str] = None) -> Dict[str, Any]:
     """Compute aggregate pipeline statistics from workflows and executions."""
-    workflows, wf_err = await get_workflows()
+    workflows, wf_err = await get_workflows(tags=tags)
     executions, ex_err = await get_executions(limit=100)
+
+    # If filtering by tags, only count executions from matching workflows
+    if tags and workflows:
+        tagged_ids = {w.id for w in workflows}
+        executions = [
+            e for e in executions if str(e.workflow_id) in tagged_ids
+        ]
 
     error = wf_err or ex_err
 
