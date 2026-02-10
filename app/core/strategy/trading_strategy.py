@@ -183,8 +183,6 @@ class TradingStrategy:
         results: list[VendorRunResult] = []
 
         for vendor in signal.suggested_vendors:
-            # Required mapping: SuggestedVendor.name -> TA_TICKER
-            os.environ["TA_TICKER"] = vendor.name
             ticker = vendor.name
 
             try:
