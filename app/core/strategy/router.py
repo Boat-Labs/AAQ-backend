@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
@@ -7,6 +9,8 @@ from app.core.strategy.service import (
     run_mock_market_signal_strategy,
 )
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 
 
@@ -15,12 +19,22 @@ class StrategyRunResponse(BaseModel):
     output_path: str | None = None
 
 
-@router.post("/market-signal", response_model=StrategyBatchResult)
+@router.post("/market-signal", response_model=StrategyRunResponse)
 def run_strategy_from_market_signal(signal: MarketSignal):
+    logger.info(
+        "POST /market-signal signal_type=%s vendors=%s",
+        signal.signal_type,
+        [v.name for v in signal.suggested_vendors],
+    )
     try:
-        return run_market_signal_strategy(signal)
+        result = run_market_signal_strategy(signal)
+        return StrategyRunResponse(batch=result, output_path=None)
     except ValueError as exc:
+        logger.exception("Market signal strategy ValueError")
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Market signal strategy unexpected error")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.post("/market-signal/mock", response_model=StrategyRunResponse)
@@ -38,4 +52,8 @@ def run_strategy_from_mock_market_signal(
             output_path=str(save_path) if save_path else None,
         )
     except ValueError as exc:
+        logger.exception("Mock market signal strategy ValueError")
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Mock market signal strategy unexpected error")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
