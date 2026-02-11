@@ -102,7 +102,7 @@ def test_market_signal_unexpected_error(mock_strategy_cls):
 
     resp = client.post("/api/strategies/market-signal", json=VALID_SIGNAL)
     assert resp.status_code == 500
-    assert "Unexpected" in resp.json()["detail"]
+    assert resp.json()["detail"] == "Internal server error"
 
 
 @patch("app.core.strategy.service.TradingStrategy")

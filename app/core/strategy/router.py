@@ -34,7 +34,7 @@ def run_strategy_from_market_signal(signal: MarketSignal):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         logger.exception("Market signal strategy unexpected error")
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
 
 
 @router.post("/market-signal/mock", response_model=StrategyRunResponse)
@@ -56,4 +56,4 @@ def run_strategy_from_mock_market_signal(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         logger.exception("Mock market signal strategy unexpected error")
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
