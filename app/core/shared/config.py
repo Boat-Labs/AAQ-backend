@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     n8n_base_url: str = "https://n8n.aishell.de"
     n8n_api_key: str = ""
 
-    model_config = {"env_file": ".env"}
+    model_config = {"env_file": ".env", "extra": "ignore"}
 
 
 settings = Settings()

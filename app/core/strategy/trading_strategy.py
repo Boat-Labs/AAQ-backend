@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
 from dataclasses import dataclass
@@ -9,6 +10,10 @@ from pathlib import Path
 from typing import Callable, Protocol
 
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
+
+load_dotenv()
 
 from app.core.strategy.models import (
     FinalStateModel,
@@ -182,10 +187,12 @@ class TradingStrategy:
 
         results: list[VendorRunResult] = []
 
-        for vendor in signal.suggested_vendors:
-            # Required mapping: SuggestedVendor.name -> TA_TICKER
-            os.environ["TA_TICKER"] = vendor.name
+        for i, vendor in enumerate(signal.suggested_vendors, 1):
             ticker = vendor.name
+            logger.info(
+                "Processing vendor %d/%d: %s",
+                i, len(signal.suggested_vendors), ticker,
+            )
 
             try:
                 final_state_raw, decision_raw = self.graph.propagate(
@@ -198,6 +205,10 @@ class TradingStrategy:
                 ):
                     # Automatic one-time fallback: disable Google thinking
                     # and retry the same ticker in the real pipeline.
+                    logger.warning(
+                        "Google thought_signature error for %s, retrying without thinking",
+                        ticker,
+                    )
                     fallback_config = self.config.copy()
                     fallback_config["google_thinking_level"] = None
                     self.config = fallback_config
@@ -206,16 +217,31 @@ class TradingStrategy:
                         self.settings.debug,
                         self.config,
                     )
-                    final_state_raw, decision_raw = self.graph.propagate(
-                        ticker, self.settings.analysis_date
-                    )
+                    try:
+                        final_state_raw, decision_raw = self.graph.propagate(
+                            ticker, self.settings.analysis_date
+                        )
+                    except Exception:
+                        logger.exception(
+                            "Vendor %s failed on fallback retry, skipping", ticker,
+                        )
+                        continue
                 else:
-                    raise
+                    logger.exception(
+                        "Vendor %s failed during propagate, skipping", ticker,
+                    )
+                    continue
 
-            propagate_result = PropagateResultModel(
-                final_state=FinalStateModel.model_validate(final_state_raw),
-                decision=decision_raw,
-            )
+            try:
+                propagate_result = PropagateResultModel(
+                    final_state=FinalStateModel.model_validate(final_state_raw),
+                    decision=decision_raw,
+                )
+            except Exception:
+                logger.exception(
+                    "Vendor %s result validation failed, skipping", ticker,
+                )
+                continue
 
             results.append(
                 VendorRunResult(
@@ -228,6 +254,12 @@ class TradingStrategy:
                     decision=propagate_result.decision,
                     final_state=propagate_result.final_state,
                 )
+            )
+            logger.info("Vendor %s completed: decision=%s", ticker, propagate_result.decision)
+
+        if not results:
+            raise ValueError(
+                "All vendors failed during analysis. Check server logs for details."
             )
 
         return StrategyBatchResult(
