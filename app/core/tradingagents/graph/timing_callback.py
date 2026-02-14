@@ -271,11 +271,11 @@ class TimingCallbackHandler(BaseCallbackHandler):
         end_time = time.monotonic()
         with self._lock:
             record = self._chain_starts.pop(rid, None)
-        if record:
-            record.end_time = end_time
-            record.duration_s = end_time - record.start_time
-            with self._lock:
+            if record:
+                record.end_time = end_time
+                record.duration_s = end_time - record.start_time
                 self.chain_records.append(record)
+        if record:
             logger.debug(
                 "Chain/node completed: name=%s duration=%.2fs",
                 record.name,
@@ -294,11 +294,10 @@ class TimingCallbackHandler(BaseCallbackHandler):
         end_time = time.monotonic()
         with self._lock:
             record = self._chain_starts.pop(rid, None)
-        if record:
-            record.end_time = end_time
-            record.duration_s = end_time - record.start_time
-            record.error = str(error)
-            with self._lock:
+            if record:
+                record.end_time = end_time
+                record.duration_s = end_time - record.start_time
+                record.error = str(error)
                 self.chain_records.append(record)
 
     # ── Tool Callbacks ───────────────────────────────────────

@@ -172,11 +172,6 @@ class TradingStrategy:
         self.settings = settings or StrategySettings.from_env()
         self.graph_factory = graph_factory or default_graph_factory
         self.config = build_runtime_config(self.settings)
-        self.graph = self.graph_factory(
-            self.settings.analysts,
-            self.settings.debug,
-            self.config,
-        )
 
     @staticmethod
     def _is_google_thought_signature_error(exc: Exception) -> bool:

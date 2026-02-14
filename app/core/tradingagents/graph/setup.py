@@ -54,35 +54,35 @@ class GraphSetup:
 
         # Create analyst nodes
         analyst_nodes = {}
-        delete_nodes = {}
         tool_nodes = {}
+
+        # No-op pass-through for parallel branches (avoids RemoveMessage
+        # conflicts during fan-in state merge)
+        def _noop(state):
+            return {}
 
         if "market" in selected_analysts:
             analyst_nodes["market"] = create_market_analyst(
                 self.quick_thinking_llm
             )
-            delete_nodes["market"] = create_msg_delete()
             tool_nodes["market"] = self.tool_nodes["market"]
 
         if "social" in selected_analysts:
             analyst_nodes["social"] = create_social_media_analyst(
                 self.quick_thinking_llm
             )
-            delete_nodes["social"] = create_msg_delete()
             tool_nodes["social"] = self.tool_nodes["social"]
 
         if "news" in selected_analysts:
             analyst_nodes["news"] = create_news_analyst(
                 self.quick_thinking_llm
             )
-            delete_nodes["news"] = create_msg_delete()
             tool_nodes["news"] = self.tool_nodes["news"]
 
         if "fundamentals" in selected_analysts:
             analyst_nodes["fundamentals"] = create_fundamentals_analyst(
                 self.quick_thinking_llm
             )
-            delete_nodes["fundamentals"] = create_msg_delete()
             tool_nodes["fundamentals"] = self.tool_nodes["fundamentals"]
 
         # Create researcher and manager nodes
@@ -111,10 +111,11 @@ class GraphSetup:
         # Add analyst nodes to the graph
         for analyst_type, node in analyst_nodes.items():
             workflow.add_node(f"{analyst_type.capitalize()} Analyst", node)
-            workflow.add_node(
-                f"Msg Clear {analyst_type.capitalize()}", delete_nodes[analyst_type]
-            )
+            workflow.add_node(f"Msg Clear {analyst_type.capitalize()}", _noop)
             workflow.add_node(f"tools_{analyst_type}", tool_nodes[analyst_type])
+
+        # Single message clear after fan-in (all branches merged)
+        workflow.add_node("Msg Clear All", create_msg_delete())
 
         # Add other nodes
         workflow.add_node("Bull Researcher", bull_researcher_node)
@@ -144,11 +145,12 @@ class GraphSetup:
             )
             workflow.add_edge(current_tools, current_analyst)
 
-        # Fan-in: all Msg Clear nodes converge before Bull Researcher
+        # Fan-in: all branch endpoints converge to single Msg Clear All
         clear_nodes = [
             f"Msg Clear {a.capitalize()}" for a in selected_analysts
         ]
-        workflow.add_edge(clear_nodes, "Bull Researcher")
+        workflow.add_edge(clear_nodes, "Msg Clear All")
+        workflow.add_edge("Msg Clear All", "Bull Researcher")
 
         # Add remaining edges
         workflow.add_conditional_edges(
