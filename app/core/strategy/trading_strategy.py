@@ -4,16 +4,11 @@ import json
 import logging
 import os
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Protocol
-
-from dotenv import load_dotenv
-
-logger = logging.getLogger(__name__)
-
-load_dotenv()
 
 from app.core.strategy.models import (
     FinalStateModel,
@@ -30,6 +25,8 @@ except ModuleNotFoundError:
     if core_dir not in sys.path:
         sys.path.insert(0, core_dir)
     from tradingagents.default_config import DEFAULT_CONFIG
+
+logger = logging.getLogger(__name__)
 
 
 class TradingGraphLike(Protocol):
@@ -89,6 +86,7 @@ class StrategySettings:
     debug: bool
     analysis_date: str
     analysts: list[str]
+    max_parallel_tickers: int
 
     @classmethod
     def from_env(cls) -> "StrategySettings":
@@ -105,12 +103,15 @@ class StrategySettings:
             else None
         )
         research_depth = int(os.getenv("TA_RESEARCH_DEPTH", "1"))
+        max_parallel_tickers = int(os.getenv("TA_MAX_PARALLEL_TICKERS", "1"))
         debug = parse_env_bool("TA_DEBUG", False)
         analysis_date = resolve_analysis_date()
         analysts = resolve_selected_analysts_from_env()
 
         if research_depth < 1:
             raise ValueError("TA_RESEARCH_DEPTH must be >= 1")
+        if max_parallel_tickers < 1:
+            raise ValueError("TA_MAX_PARALLEL_TICKERS must be >= 1")
         if provider != "google":
             raise ValueError(
                 "This strategy script is configured for Gemini workflow. Set TA_LLM_PROVIDER=google."
@@ -125,6 +126,7 @@ class StrategySettings:
             deep_model=deep_model,
             google_thinking_level=google_thinking_level,
             research_depth=research_depth,
+            max_parallel_tickers=max_parallel_tickers,
             debug=debug,
             analysis_date=analysis_date,
             analysts=analysts,
@@ -181,81 +183,110 @@ class TradingStrategy:
         message = str(exc).lower()
         return "thought_signature" in message and "gemini" in message
 
+    def _process_single_vendor(
+        self, vendor, signal: MarketSignal, index: int, total: int,
+    ) -> VendorRunResult | None:
+        """Process a single vendor ticker. Returns None on failure."""
+        ticker = vendor.name
+        logger.info("Processing vendor %d/%d: %s", index, total, ticker)
+
+        # Each vendor gets its own graph instance for thread-safety
+        graph = self.graph_factory(
+            self.settings.analysts, self.settings.debug, self.config,
+        )
+
+        try:
+            final_state_raw, decision_raw = graph.propagate(
+                ticker, self.settings.analysis_date
+            )
+        except Exception as exc:
+            if (
+                self.settings.provider == "google"
+                and self._is_google_thought_signature_error(exc)
+            ):
+                logger.warning(
+                    "Google thought_signature error for %s, retrying without thinking",
+                    ticker,
+                )
+                fallback_config = self.config.copy()
+                fallback_config["google_thinking_level"] = None
+                fallback_graph = self.graph_factory(
+                    self.settings.analysts, self.settings.debug, fallback_config,
+                )
+                try:
+                    final_state_raw, decision_raw = fallback_graph.propagate(
+                        ticker, self.settings.analysis_date
+                    )
+                except Exception:
+                    logger.exception(
+                        "Vendor %s failed on fallback retry, skipping", ticker,
+                    )
+                    return None
+            else:
+                logger.exception(
+                    "Vendor %s failed during propagate, skipping", ticker,
+                )
+                return None
+
+        try:
+            propagate_result = PropagateResultModel(
+                final_state=FinalStateModel.model_validate(final_state_raw),
+                decision=decision_raw,
+            )
+        except Exception:
+            logger.exception(
+                "Vendor %s result validation failed, skipping", ticker,
+            )
+            return None
+
+        logger.info(
+            "Vendor %s completed: decision=%s", ticker, propagate_result.decision,
+        )
+        return VendorRunResult(
+            ticker=ticker,
+            analysis_date=self.settings.analysis_date,
+            signal_type=signal.signal_type,
+            signal_label=signal.label,
+            vendor_reason=vendor.reason,
+            vendor_confidence=vendor.confidence,
+            decision=propagate_result.decision,
+            final_state=propagate_result.final_state,
+        )
+
     def run_market_signal(self, signal: MarketSignal) -> StrategyBatchResult:
         if not signal.suggested_vendors:
             raise ValueError("MarketSignal.suggested_vendors cannot be empty")
 
-        results: list[VendorRunResult] = []
+        total = len(signal.suggested_vendors)
+        max_workers = min(self.settings.max_parallel_tickers, total)
 
-        for i, vendor in enumerate(signal.suggested_vendors, 1):
-            ticker = vendor.name
-            logger.info(
-                "Processing vendor %d/%d: %s",
-                i, len(signal.suggested_vendors), ticker,
-            )
-
-            try:
-                final_state_raw, decision_raw = self.graph.propagate(
-                    ticker, self.settings.analysis_date
-                )
-            except Exception as exc:
-                if (
-                    self.settings.provider == "google"
-                    and self._is_google_thought_signature_error(exc)
-                ):
-                    # Automatic one-time fallback: disable Google thinking
-                    # and retry the same ticker in the real pipeline.
-                    logger.warning(
-                        "Google thought_signature error for %s, retrying without thinking",
-                        ticker,
-                    )
-                    fallback_config = self.config.copy()
-                    fallback_config["google_thinking_level"] = None
-                    self.config = fallback_config
-                    self.graph = self.graph_factory(
-                        self.settings.analysts,
-                        self.settings.debug,
-                        self.config,
-                    )
+        if max_workers == 1:
+            # Sequential path (preserves original behavior)
+            results = []
+            for i, vendor in enumerate(signal.suggested_vendors, 1):
+                result = self._process_single_vendor(vendor, signal, i, total)
+                if result is not None:
+                    results.append(result)
+        else:
+            # Parallel path
+            results = []
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {
+                    executor.submit(
+                        self._process_single_vendor, vendor, signal, i, total,
+                    ): vendor.name
+                    for i, vendor in enumerate(signal.suggested_vendors, 1)
+                }
+                for future in as_completed(futures):
+                    ticker = futures[future]
                     try:
-                        final_state_raw, decision_raw = self.graph.propagate(
-                            ticker, self.settings.analysis_date
-                        )
+                        result = future.result()
+                        if result is not None:
+                            results.append(result)
                     except Exception:
                         logger.exception(
-                            "Vendor %s failed on fallback retry, skipping", ticker,
+                            "Vendor %s raised unexpected error", ticker,
                         )
-                        continue
-                else:
-                    logger.exception(
-                        "Vendor %s failed during propagate, skipping", ticker,
-                    )
-                    continue
-
-            try:
-                propagate_result = PropagateResultModel(
-                    final_state=FinalStateModel.model_validate(final_state_raw),
-                    decision=decision_raw,
-                )
-            except Exception:
-                logger.exception(
-                    "Vendor %s result validation failed, skipping", ticker,
-                )
-                continue
-
-            results.append(
-                VendorRunResult(
-                    ticker=ticker,
-                    analysis_date=self.settings.analysis_date,
-                    signal_type=signal.signal_type,
-                    signal_label=signal.label,
-                    vendor_reason=vendor.reason,
-                    vendor_confidence=vendor.confidence,
-                    decision=propagate_result.decision,
-                    final_state=propagate_result.final_state,
-                )
-            )
-            logger.info("Vendor %s completed: decision=%s", ticker, propagate_result.decision)
 
         if not results:
             raise ValueError(
@@ -303,6 +334,7 @@ def save_batch_result(batch: StrategyBatchResult, output_path: str | Path) -> Pa
 
 
 def main():
+    from dotenv import load_dotenv
     load_dotenv()
 
     signal_path = os.getenv("SIGNAL_JSON_PATH")

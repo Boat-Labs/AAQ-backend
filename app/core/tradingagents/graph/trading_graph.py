@@ -1,6 +1,8 @@
 # TradingAgents/graph/trading_graph.py
 
+import logging
 import os
+import time
 from pathlib import Path
 import json
 from datetime import date
@@ -38,6 +40,8 @@ from .setup import GraphSetup
 from .propagation import Propagator
 from .reflection import Reflector
 from .signal_processing import SignalProcessor
+
+logger = logging.getLogger(__name__)
 
 
 class TradingAgentsGraph:
@@ -188,11 +192,16 @@ class TradingAgentsGraph:
 
         self.ticker = company_name
 
+        # End-to-end timing
+        e2e_start = time.monotonic()
+
         # Initialize state
         init_agent_state = self.propagator.create_initial_state(
             company_name, trade_date
         )
-        args = self.propagator.get_graph_args()
+        args = self.propagator.get_graph_args(
+            callbacks=self.callbacks if self.callbacks else None
+        )
 
         if self.debug:
             # Debug mode with tracing
@@ -208,6 +217,16 @@ class TradingAgentsGraph:
         else:
             # Standard mode without tracing
             final_state = self.graph.invoke(init_agent_state, **args)
+
+        # End-to-end timing complete
+        e2e_duration = time.monotonic() - e2e_start
+
+        # Log timing summary from callbacks
+        for cb in self.callbacks:
+            if hasattr(cb, "log_summary"):
+                cb.log_summary(end_to_end_s=e2e_duration)
+            if hasattr(cb, "reset"):
+                cb.reset()
 
         # Store current state for reflection
         self.curr_state = final_state
