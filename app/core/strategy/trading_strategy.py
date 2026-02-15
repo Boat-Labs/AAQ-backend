@@ -145,23 +145,13 @@ class StrategySettings:
         req: ModelSelectionRequest,
     ) -> StrategySettings:
         """Create settings from env defaults, overriding with request params."""
+        import dataclasses
+
         base = cls.from_env()
-        if req.quick_provider:
-            base.quick_provider = req.quick_provider
-        if req.quick_model:
-            base.quick_model = req.quick_model
-        if req.quick_backend_url:
-            base.quick_backend_url = req.quick_backend_url
-        if req.deep_provider:
-            base.deep_provider = req.deep_provider
-        if req.deep_model:
-            base.deep_model = req.deep_model
-        if req.deep_backend_url:
-            base.deep_backend_url = req.deep_backend_url
-        if req.google_thinking_level:
-            base.google_thinking_level = req.google_thinking_level
-        if req.openai_reasoning_effort:
-            base.openai_reasoning_effort = req.openai_reasoning_effort
+        field_names = {f.name for f in dataclasses.fields(base)}
+        for name in req.model_fields_set:
+            if name in field_names:
+                setattr(base, name, getattr(req, name))
         return base
 
 
@@ -309,6 +299,8 @@ class TradingStrategy:
 
         return StrategyBatchResult(
             provider=self.settings.provider,
+            quick_provider=self.settings.quick_provider,
+            deep_provider=self.settings.deep_provider,
             quick_model=self.settings.quick_model,
             deep_model=self.settings.deep_model,
             analysis_date=self.settings.analysis_date,

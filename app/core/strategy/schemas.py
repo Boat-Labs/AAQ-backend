@@ -39,6 +39,15 @@ class ModelSelectionRequest(BaseModel):
             raise ValueError("google_thinking_level must be 'high' or 'minimal'")
         return v
 
+    @field_validator("quick_backend_url", "deep_backend_url")
+    @classmethod
+    def validate_backend_url(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if not v.startswith("https://"):
+            raise ValueError("backend_url must use HTTPS")
+        return v
+
     @field_validator("openai_reasoning_effort")
     @classmethod
     def validate_reasoning_effort(cls, v: str | None) -> str | None:

@@ -115,3 +115,60 @@ def test_mock_market_signal_success(mock_strategy_cls):
     body = resp.json()
     assert "batch" in body
     assert body["output_path"] is None
+
+
+@patch("app.core.strategy.service.TradingStrategy")
+def test_mock_market_signal_with_model_selection(mock_strategy_cls):
+    instance = MagicMock()
+    instance.run_market_signal.return_value = _make_batch_result()
+    mock_strategy_cls.return_value = instance
+
+    resp = client.post(
+        "/api/strategies/market-signal/mock",
+        json={
+            "quick_provider": "openai",
+            "quick_model": "gpt-4.1-mini",
+            "deep_provider": "google",
+            "deep_model": "gemini-3-pro-preview",
+        },
+    )
+    assert resp.status_code == 200
+    assert "batch" in resp.json()
+
+
+def test_mock_market_signal_invalid_provider():
+    resp = client.post(
+        "/api/strategies/market-signal/mock",
+        json={"quick_provider": "bogus"},
+    )
+    assert resp.status_code == 422
+    detail = resp.json()["detail"]
+    assert any("Unknown provider" in e["msg"] for e in detail)
+
+
+def test_mock_market_signal_invalid_thinking_level():
+    resp = client.post(
+        "/api/strategies/market-signal/mock",
+        json={"google_thinking_level": "turbo"},
+    )
+    assert resp.status_code == 422
+
+
+def test_mock_market_signal_invalid_backend_url():
+    resp = client.post(
+        "/api/strategies/market-signal/mock",
+        json={"quick_backend_url": "http://169.254.169.254/metadata"},
+    )
+    assert resp.status_code == 422
+    detail = resp.json()["detail"]
+    assert any("HTTPS" in e["msg"] for e in detail)
+
+
+def test_model_config_providers():
+    resp = client.get("/api/model-config/providers")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "openai" in body
+    assert "google" in body
+    assert isinstance(body["openai"], list)
+    assert len(body["openai"]) > 0
