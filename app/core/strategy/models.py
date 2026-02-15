@@ -146,6 +146,8 @@ class VendorRunResult(BaseModel):
 
 class StrategyBatchResult(BaseModel):
     provider: str
+    quick_provider: str | None = None
+    deep_provider: str | None = None
     quick_model: str
     deep_model: str
     analysis_date: str

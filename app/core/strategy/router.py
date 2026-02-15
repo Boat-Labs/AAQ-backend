@@ -1,9 +1,10 @@
 import logging
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Body, HTTPException, Query
 from pydantic import BaseModel
 
 from app.core.strategy.models import MarketSignal, StrategyBatchResult
+from app.core.strategy.schemas import ModelSelectionRequest
 from app.core.strategy.service import (
     run_market_signal_strategy,
     run_mock_market_signal_strategy,
@@ -19,15 +20,22 @@ class StrategyRunResponse(BaseModel):
     output_path: str | None = None
 
 
+class MarketSignalRunRequest(BaseModel):
+    signal: MarketSignal
+    model_selection: ModelSelectionRequest | None = None
+
+
 @router.post("/market-signal", response_model=StrategyRunResponse)
-def run_strategy_from_market_signal(signal: MarketSignal):
+def run_strategy_from_market_signal(req: MarketSignalRunRequest):
     logger.info(
         "POST /market-signal signal_type=%s vendors=%s",
-        signal.signal_type,
-        [v.name for v in signal.suggested_vendors],
+        req.signal.signal_type,
+        [v.name for v in req.signal.suggested_vendors],
     )
     try:
-        result = run_market_signal_strategy(signal)
+        result = run_market_signal_strategy(
+            req.signal, model_selection=req.model_selection,
+        )
         return StrategyRunResponse(batch=result, output_path=None)
     except ValueError as exc:
         logger.exception("Market signal strategy ValueError")
@@ -41,11 +49,13 @@ def run_strategy_from_market_signal(signal: MarketSignal):
 def run_strategy_from_mock_market_signal(
     persist_result: bool = Query(default=False),
     output_dir: str | None = Query(default=None),
+    model_selection: ModelSelectionRequest | None = Body(default=None),
 ):
     try:
         batch, save_path = run_mock_market_signal_strategy(
             persist_result=persist_result,
             output_dir=output_dir,
+            model_selection=model_selection,
         )
         return StrategyRunResponse(
             batch=batch,

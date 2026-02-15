@@ -1,6 +1,5 @@
 from unittest.mock import MagicMock, patch
 
-import pytest
 from fastapi.testclient import TestClient
 
 from app.core.strategy.models import (
@@ -58,7 +57,7 @@ def test_market_signal_success(mock_strategy_cls):
     instance.run_market_signal.return_value = _make_batch_result()
     mock_strategy_cls.return_value = instance
 
-    resp = client.post("/api/strategies/market-signal", json=VALID_SIGNAL)
+    resp = client.post("/api/strategies/market-signal", json={"signal": VALID_SIGNAL})
     assert resp.status_code == 200
     body = resp.json()
     assert "batch" in body
@@ -70,7 +69,7 @@ def test_market_signal_success(mock_strategy_cls):
 
 def test_market_signal_empty_vendors():
     signal = {**VALID_SIGNAL, "suggested_vendors": []}
-    resp = client.post("/api/strategies/market-signal", json=signal)
+    resp = client.post("/api/strategies/market-signal", json={"signal": signal})
     # Empty vendors triggers ValueError in TradingStrategy.run_market_signal
     # but since service creates TradingStrategy which needs env vars,
     # this may fail at construction. Either 400 or 500 is acceptable.
@@ -79,7 +78,7 @@ def test_market_signal_empty_vendors():
 
 def test_market_signal_invalid_signal_type():
     signal = {**VALID_SIGNAL, "signal_type": "invalid_type"}
-    resp = client.post("/api/strategies/market-signal", json=signal)
+    resp = client.post("/api/strategies/market-signal", json={"signal": signal})
     assert resp.status_code == 422
 
 
@@ -89,7 +88,7 @@ def test_market_signal_propagate_value_error(mock_strategy_cls):
     instance.run_market_signal.side_effect = ValueError("All vendors failed")
     mock_strategy_cls.return_value = instance
 
-    resp = client.post("/api/strategies/market-signal", json=VALID_SIGNAL)
+    resp = client.post("/api/strategies/market-signal", json={"signal": VALID_SIGNAL})
     assert resp.status_code == 400
     assert "All vendors failed" in resp.json()["detail"]
 
@@ -100,7 +99,7 @@ def test_market_signal_unexpected_error(mock_strategy_cls):
     instance.run_market_signal.side_effect = RuntimeError("Unexpected")
     mock_strategy_cls.return_value = instance
 
-    resp = client.post("/api/strategies/market-signal", json=VALID_SIGNAL)
+    resp = client.post("/api/strategies/market-signal", json={"signal": VALID_SIGNAL})
     assert resp.status_code == 500
     assert resp.json()["detail"] == "Internal server error"
 
@@ -116,3 +115,60 @@ def test_mock_market_signal_success(mock_strategy_cls):
     body = resp.json()
     assert "batch" in body
     assert body["output_path"] is None
+
+
+@patch("app.core.strategy.service.TradingStrategy")
+def test_mock_market_signal_with_model_selection(mock_strategy_cls):
+    instance = MagicMock()
+    instance.run_market_signal.return_value = _make_batch_result()
+    mock_strategy_cls.return_value = instance
+
+    resp = client.post(
+        "/api/strategies/market-signal/mock",
+        json={
+            "quick_provider": "openai",
+            "quick_model": "gpt-4.1-mini",
+            "deep_provider": "google",
+            "deep_model": "gemini-3-pro-preview",
+        },
+    )
+    assert resp.status_code == 200
+    assert "batch" in resp.json()
+
+
+def test_mock_market_signal_invalid_provider():
+    resp = client.post(
+        "/api/strategies/market-signal/mock",
+        json={"quick_provider": "bogus"},
+    )
+    assert resp.status_code == 422
+    detail = resp.json()["detail"]
+    assert any("Unknown provider" in e["msg"] for e in detail)
+
+
+def test_mock_market_signal_invalid_thinking_level():
+    resp = client.post(
+        "/api/strategies/market-signal/mock",
+        json={"google_thinking_level": "turbo"},
+    )
+    assert resp.status_code == 422
+
+
+def test_mock_market_signal_invalid_backend_url():
+    resp = client.post(
+        "/api/strategies/market-signal/mock",
+        json={"quick_backend_url": "http://169.254.169.254/metadata"},
+    )
+    assert resp.status_code == 422
+    detail = resp.json()["detail"]
+    assert any("HTTPS" in e["msg"] for e in detail)
+
+
+def test_model_config_providers():
+    resp = client.get("/api/model-config/providers")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "openai" in body
+    assert "google" in body
+    assert isinstance(body["openai"], list)
+    assert len(body["openai"]) > 0

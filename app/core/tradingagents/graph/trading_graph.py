@@ -3,8 +3,7 @@
 import os
 from pathlib import Path
 import json
-from datetime import date
-from typing import Dict, Any, Tuple, List, Optional
+from typing import Dict, Any, List, Optional
 
 from langgraph.prebuilt import ToolNode
 
@@ -13,11 +12,6 @@ from tradingagents.llm_clients import create_llm_client
 from tradingagents.agents import *
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.agents.utils.memory import FinancialSituationMemory
-from tradingagents.agents.utils.agent_states import (
-    AgentState,
-    InvestDebateState,
-    RiskDebateState,
-)
 from tradingagents.dataflows.config import set_config
 
 # Import the new abstract tool methods from agent_utils
@@ -71,29 +65,44 @@ class TradingAgentsGraph:
             exist_ok=True,
         )
 
-        # Initialize LLMs with provider-specific thinking configuration
-        llm_kwargs = self._get_provider_kwargs()
+        # Resolve per-role provider (fall back to global llm_provider / backend_url)
+        global_provider = self.config["llm_provider"]
+        global_url = self.config.get("backend_url")
+
+        quick_provider = self.config.get("quick_think_provider") or global_provider
+        quick_url = self.config.get("quick_think_backend_url")
+        if quick_url is None and quick_provider == global_provider:
+            quick_url = global_url
+
+        deep_provider = self.config.get("deep_think_provider") or global_provider
+        deep_url = self.config.get("deep_think_backend_url")
+        if deep_url is None and deep_provider == global_provider:
+            deep_url = global_url
+
+        quick_kwargs = self._get_provider_kwargs(quick_provider)
+        deep_kwargs = self._get_provider_kwargs(deep_provider)
 
         # Add callbacks to kwargs if provided (passed to LLM constructor)
         if self.callbacks:
-            llm_kwargs["callbacks"] = self.callbacks
+            quick_kwargs["callbacks"] = self.callbacks
+            deep_kwargs["callbacks"] = self.callbacks
 
         deep_client = create_llm_client(
-            provider=self.config["llm_provider"],
+            provider=deep_provider,
             model=self.config["deep_think_llm"],
-            base_url=self.config.get("backend_url"),
-            **llm_kwargs,
+            base_url=deep_url,
+            **deep_kwargs,
         )
         quick_client = create_llm_client(
-            provider=self.config["llm_provider"],
+            provider=quick_provider,
             model=self.config["quick_think_llm"],
-            base_url=self.config.get("backend_url"),
-            **llm_kwargs,
+            base_url=quick_url,
+            **quick_kwargs,
         )
 
         self.deep_thinking_llm = deep_client.get_llm()
         self.quick_thinking_llm = quick_client.get_llm()
-        
+
         # Initialize memories
         self.bull_memory = FinancialSituationMemory("bull_memory", self.config)
         self.bear_memory = FinancialSituationMemory("bear_memory", self.config)
@@ -130,10 +139,12 @@ class TradingAgentsGraph:
         # Set up the graph
         self.graph = self.graph_setup.setup_graph(selected_analysts)
 
-    def _get_provider_kwargs(self) -> Dict[str, Any]:
+    def _get_provider_kwargs(self, provider: str | None = None) -> Dict[str, Any]:
         """Get provider-specific kwargs for LLM client creation."""
         kwargs = {}
-        provider = self.config.get("llm_provider", "").lower()
+        if provider is None:
+            provider = self.config.get("llm_provider", "")
+        provider = provider.lower()
 
         if provider == "google":
             thinking_level = self.config.get("google_thinking_level")
