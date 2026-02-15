@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.core.activities.router import router as activities_router
 from app.core.goal.router import router as goal_router
 from app.core.market_intelligence.router import router as market_router
+from app.core.model_config.router import router as model_config_router
 from app.core.n8n.router import router as n8n_router
 from app.core.news.router import router as news_router
 from app.core.performance.router import router as performance_router
@@ -19,5 +20,6 @@ api_router.include_router(news_router, prefix="/news", tags=["News"])
 api_router.include_router(strategy_router, prefix="/strategies", tags=["Strategies"])
 api_router.include_router(activities_router, prefix="/activities", tags=["User Activities"])
 api_router.include_router(n8n_router, prefix="/n8n", tags=["n8n Pipelines"])
+api_router.include_router(model_config_router, prefix="/model-config", tags=["Model Config"])
 api_router.include_router(performance_router, prefix="/performance", tags=["Performance"])
 api_router.include_router(signal_bridge_router, prefix="/signals", tags=["Signal Bridge"])

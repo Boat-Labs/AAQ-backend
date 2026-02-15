@@ -1,6 +1,5 @@
 from unittest.mock import MagicMock, patch
 
-import pytest
 from fastapi.testclient import TestClient
 
 from app.core.strategy.models import (
@@ -58,7 +57,7 @@ def test_market_signal_success(mock_strategy_cls):
     instance.run_market_signal.return_value = _make_batch_result()
     mock_strategy_cls.return_value = instance
 
-    resp = client.post("/api/strategies/market-signal", json=VALID_SIGNAL)
+    resp = client.post("/api/strategies/market-signal", json={"signal": VALID_SIGNAL})
     assert resp.status_code == 200
     body = resp.json()
     assert "batch" in body
@@ -70,7 +69,7 @@ def test_market_signal_success(mock_strategy_cls):
 
 def test_market_signal_empty_vendors():
     signal = {**VALID_SIGNAL, "suggested_vendors": []}
-    resp = client.post("/api/strategies/market-signal", json=signal)
+    resp = client.post("/api/strategies/market-signal", json={"signal": signal})
     # Empty vendors triggers ValueError in TradingStrategy.run_market_signal
     # but since service creates TradingStrategy which needs env vars,
     # this may fail at construction. Either 400 or 500 is acceptable.
@@ -79,7 +78,7 @@ def test_market_signal_empty_vendors():
 
 def test_market_signal_invalid_signal_type():
     signal = {**VALID_SIGNAL, "signal_type": "invalid_type"}
-    resp = client.post("/api/strategies/market-signal", json=signal)
+    resp = client.post("/api/strategies/market-signal", json={"signal": signal})
     assert resp.status_code == 422
 
 
@@ -89,7 +88,7 @@ def test_market_signal_propagate_value_error(mock_strategy_cls):
     instance.run_market_signal.side_effect = ValueError("All vendors failed")
     mock_strategy_cls.return_value = instance
 
-    resp = client.post("/api/strategies/market-signal", json=VALID_SIGNAL)
+    resp = client.post("/api/strategies/market-signal", json={"signal": VALID_SIGNAL})
     assert resp.status_code == 400
     assert "All vendors failed" in resp.json()["detail"]
 
@@ -100,7 +99,7 @@ def test_market_signal_unexpected_error(mock_strategy_cls):
     instance.run_market_signal.side_effect = RuntimeError("Unexpected")
     mock_strategy_cls.return_value = instance
 
-    resp = client.post("/api/strategies/market-signal", json=VALID_SIGNAL)
+    resp = client.post("/api/strategies/market-signal", json={"signal": VALID_SIGNAL})
     assert resp.status_code == 500
     assert resp.json()["detail"] == "Internal server error"
 
