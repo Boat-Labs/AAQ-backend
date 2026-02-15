@@ -239,8 +239,13 @@ class TradingStrategy:
                     ticker, self.settings.analysis_date
                 )
             except Exception as exc:
-                if (
+                uses_google = (
                     self.settings.provider == "google"
+                    or self.settings.quick_provider == "google"
+                    or self.settings.deep_provider == "google"
+                )
+                if (
+                    uses_google
                     and self._is_google_thought_signature_error(exc)
                 ):
                     # Automatic one-time fallback: disable Google thinking
