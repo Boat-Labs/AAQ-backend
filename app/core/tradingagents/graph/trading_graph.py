@@ -66,10 +66,18 @@ class TradingAgentsGraph:
         )
 
         # Resolve per-role provider (fall back to global llm_provider / backend_url)
-        quick_provider = self.config.get("quick_think_provider") or self.config["llm_provider"]
-        quick_url = self.config.get("quick_think_backend_url") or self.config.get("backend_url")
-        deep_provider = self.config.get("deep_think_provider") or self.config["llm_provider"]
-        deep_url = self.config.get("deep_think_backend_url") or self.config.get("backend_url")
+        global_provider = self.config["llm_provider"]
+        global_url = self.config.get("backend_url")
+
+        quick_provider = self.config.get("quick_think_provider") or global_provider
+        quick_url = self.config.get("quick_think_backend_url")
+        if quick_url is None and quick_provider == global_provider:
+            quick_url = global_url
+
+        deep_provider = self.config.get("deep_think_provider") or global_provider
+        deep_url = self.config.get("deep_think_backend_url")
+        if deep_url is None and deep_provider == global_provider:
+            deep_url = global_url
 
         quick_kwargs = self._get_provider_kwargs(quick_provider)
         deep_kwargs = self._get_provider_kwargs(deep_provider)
